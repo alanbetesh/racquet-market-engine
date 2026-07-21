@@ -61,10 +61,9 @@ export default function AnalyzePage() {
   const rawAvgPrice = data?.completedSales?.avgPrice ?? 0;
   const avgPrice = typeof rawAvgPrice === "number" && !Number.isNaN(rawAvgPrice) ? rawAvgPrice : 0;
   
-  const medianPrice = data?.completedSales?.medianPrice ?? avgPrice ?? 0;
-  const highestPrice = data?.completedSales?.highestPrice ?? (avgPrice * 1.2) ?? 0;
-  const lowestPrice = data?.completedSales?.lowestPrice ?? (avgPrice * 0.8) ?? 0;
-  const salesVolume = data?.completedSales?.volume ?? 0;
+ const medianPrice = data?.completedSales?.medianPrice ?? avgPrice ?? 0;
+const highestPrice = data?.completedSales?.highestPrice ?? (avgPrice ? avgPrice * 1.2 : 0);
+const lowestPrice = data?.completedSales?.lowestPrice ?? (avgPrice ? avgPrice * 0.8 : 0);
   const isLiveFeed = !!data?.isLiveEbayData;
   const activeListings = data?.activeListings || [];
   const chartData = data?.chartData || [];
