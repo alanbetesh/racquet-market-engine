@@ -1,216 +1,327 @@
-"use client";
+'use client';
 
-import React, { useState, useEffect } from "react";
-import { useSearchParams, useRouter } from "next/navigation";
-import Link from "next/link";
-import { ArrowLeft, TrendingUp, AlertTriangle, Activity, ShieldAlert, Tag } from "lucide-react";
-import { FlipCalculator } from "@/components/dashboard/FlipCalculator";
-import { ActiveListingsTable } from "@/components/dashboard/ActiveListingsTable";
-import { PriceChart } from "@/components/dashboard/PriceChart";
+import React, { useState, useEffect, Suspense, useMemo } from 'react';
+import { useSearchParams, useRouter } from 'next/navigation';
+import Link from 'next/link';
+import {
+  LineChart,
+  Line,
+  XAxis,
+  YAxis,
+  CartesianGrid,
+  Tooltip,
+  ResponsiveContainer,
+} from 'recharts';
+import AutocompleteSearch from '@/components/AutocompleteSearch';
+import { RacketMasterEntry } from '@/lib/racketsDatabase';
 
 interface MarketData {
-  racketName?: string;
+  query?: string;
+  condition?: string;
+  avgPrice?: number;
+  medianPrice?: number;
+  highestPrice?: number;
+  lowestPrice?: number;
+  salesVolume?: number;
+  avgDaysToSell?: number;
+  history?: Array<{ date: string; price: number }>;
+  listings?: Array<{
+    title: string;
+    price: number;
+    shippingPrice?: number;
+    date?: string;
+    url?: string;
+    condition?: string;
+  }>;
   isLiveEbayData?: boolean;
-  completedSales?: {
-    avgPrice?: number;
-    medianPrice?: number;
-    highestPrice?: number;
-    lowestPrice?: number;
-    volume?: number;
-  };
-  chartData?: any[];
-  activeListings?: any[];
 }
 
-export default function AnalyzePage() {
+function AnalyzeContent() {
   const searchParams = useSearchParams();
   const router = useRouter();
-  
-  const query = searchParams.get("query") || "";
-  const currentCondition = searchParams.get("condition") || "used";
 
+  const query = searchParams.get('query') || 'Yonex VCORE 100';
+  const initialCondition = searchParams.get('condition') || 'used';
+
+  const [condition, setCondition] = useState<string>(initialCondition);
   const [data, setData] = useState<MarketData | null>(null);
-  const [loading, setLoading] = useState(true);
+  const [loading, setLoading] = useState<boolean>(true);
   const [error, setError] = useState<string | null>(null);
+  const [sortOrder, setSortOrder] = useState<'high-to-low' | 'low-to-high' | 'default'>('high-to-low');
+
+  const [searchInputValue, setSearchInputValue] = useState(query);
 
   useEffect(() => {
-    async function getMarketData() {
-      if (!query) return;
+    setSearchInputValue(query);
+  }, [query]);
+
+  const handleSelectNewRacket = (racket: RacketMasterEntry) => {
+    setSearchInputValue(racket.fullName);
+    router.push(`/analyze?query=${encodeURIComponent(racket.fullName)}&condition=${condition}`);
+  };
+
+  useEffect(() => {
+    async function fetchMarketData() {
+      setLoading(true);
+      setError(null);
       try {
-        setLoading(true);
-        setError(null);
+        const cacheBuster = new Date().getTime();
         
-        // Appends the current condition to the API call so it filters Used vs New!
-        const response = await fetch(`/api/market?query=${encodeURIComponent(query)}&condition=${currentCondition}`);
-        if (!response.ok) {
-          throw new Error("Failed to communicate with market engine service");
-        }
-        const json = await response.json();
-        setData(json);
-      } catch (err: any) {
-        console.error("Error retrieving market analytics:", err);
-        setError(err?.message || "An error occurred while loading telemetry data.");
+        // CLEAN QUERY FOR API: Remove parentheses and normalize spaces before fetching
+        const cleanFetchQuery = query.replace(/[()]/g, '').replace(/\s+/g, ' ').trim();
+
+        const response = await fetch(
+          `/api/market?query=${encodeURIComponent(cleanFetchQuery)}&condition=${encodeURIComponent(condition)}&t=${cacheBuster}`,
+          { cache: 'no-store' }
+        );
+
+        if (!response.ok) throw new Error('Failed to fetch market data');
+        const result = await response.json();
+        setData(result);
+      } catch (err: unknown) {
+        setError(err instanceof Error ? err.message : 'An unexpected error occurred');
       } finally {
         setLoading(false);
       }
     }
-    getMarketData();
-  }, [query, currentCondition]);
+    fetchMarketData();
+  }, [query, condition]);
 
-  const racketTitle = data?.racketName || query || "Unknown Frame";
-  const rawAvgPrice = data?.completedSales?.avgPrice ?? 0;
-  const avgPrice = typeof rawAvgPrice === "number" && !Number.isNaN(rawAvgPrice) ? rawAvgPrice : 0;
-  
- const medianPrice = data?.completedSales?.medianPrice ?? avgPrice ?? 0;
-const highestPrice = data?.completedSales?.highestPrice ?? (avgPrice ? avgPrice * 1.2 : 0);
-const lowestPrice = data?.completedSales?.lowestPrice ?? (avgPrice ? avgPrice * 0.8 : 0);
+  const avgPrice = data?.avgPrice ?? 0;
+  const medianPrice = data?.medianPrice ?? avgPrice ?? 0;
+  const lowestBasePrice = data?.lowestPrice ?? 0;
+  const salesVolume = data?.salesVolume ?? data?.listings?.length ?? 0;
+  const avgDaysToSell = data?.avgDaysToSell ?? 7;
   const isLiveFeed = !!data?.isLiveEbayData;
-  const activeListings = data?.activeListings || [];
-  const chartData = data?.chartData || [];
 
-  const buyZoneSick = { min: 0, max: Math.round(avgPrice * 0.55) };
-  const buyZoneGood = { min: Math.round(avgPrice * 0.55) + 1, max: Math.round(avgPrice * 0.70) };
-  const buyZoneTight = { min: Math.round(avgPrice * 0.70) + 1, max: Math.round(avgPrice * 0.82) };
+  const lowestLandedPrice = useMemo(() => {
+    if (!data?.listings || data.listings.length === 0) return 0;
+    return Math.min(...data.listings.map(item => item.price + (item.shippingPrice || 0)));
+  }, [data?.listings]);
 
-  if (loading) {
-    return (
-      <div className="flex flex-col items-center justify-center min-h-[60vh] font-mono space-y-4">
-        <Activity className="h-8 w-8 text-emerald-400 animate-spin" />
-        <div className="text-xs uppercase font-bold tracking-widest text-textPrimary animate-pulse">
-          Parsing Secondary Markets...
+  const sortedListings = useMemo(() => {
+    if (!data?.listings) return [];
+    const list = [...data.listings];
+    if (sortOrder === 'high-to-low') return list.sort((a, b) => b.price - a.price);
+    if (sortOrder === 'low-to-high') return list.sort((a, b) => a.price - b.price);
+    return list;
+  }, [data?.listings, sortOrder]);
+
+  const CustomTooltip = ({ active, payload, label }: any) => {
+    if (active && payload && payload.length) {
+      return (
+        <div className="bg-slate-800 border border-slate-700 p-3 rounded-lg shadow-xl">
+          <p className="text-slate-300 text-sm mb-1">{label}</p>
+          <p className="text-emerald-400 font-bold text-lg">${payload[0].value.toFixed(2)}</p>
         </div>
-      </div>
-    );
-  }
-
-  if (error || !query) {
-    return (
-      <div className="max-w-md mx-auto my-12 p-6 border border-red-500/20 bg-surface rounded-lg font-mono text-center space-y-4">
-        <ShieldAlert className="h-10 w-10 text-red-400 mx-auto" />
-        <h2 className="text-sm font-bold uppercase text-textPrimary">Analysis Diagnostic Fault</h2>
-        <p className="text-xs text-textSecondary">{error || "No search parameter query specified."}</p>
-        <Link href="/" className="inline-block text-xs uppercase underline text-textPrimary">
-          Return to Console
-        </Link>
-      </div>
-    );
-  }
+      );
+    }
+    return null;
+  };
 
   return (
-    <div className="max-w-6xl mx-auto p-4 font-mono space-y-6 pb-12 animate-in fade-in duration-500">
-      <Link href="/" className="inline-flex items-center gap-2 text-xs text-textSecondary hover:text-textPrimary transition-colors">
-        <ArrowLeft className="h-4 w-4" /> Return to Terminal
-      </Link>
-
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b border-border pb-4">
-        <div>
-          <h1 className="text-xl font-bold uppercase tracking-tight text-textPrimary">{racketTitle}</h1>
-          <p className="text-xs text-textSecondary mt-0.5">Market snapshot compiled across secondary auction indexes.</p>
-        </div>
-        {isLiveFeed && (
-          <span className="self-start sm:self-center text-[10px] text-emerald-400 bg-emerald-500/10 px-2.5 py-1 rounded border border-emerald-500/20 uppercase font-bold tracking-wider animate-pulse">
-            ● Live API Connection Active
-          </span>
-        )}
-      </div>
-
-      {/* RESTORED: Condition Selector Tabs */}
-      <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between border border-border p-2 rounded bg-surface font-mono text-xs gap-3">
-        <div className="flex items-center gap-2 text-textSecondary px-2">
-          <Tag className="h-4 w-4 text-emerald-400" />
-          <span className="font-bold uppercase tracking-wider text-textPrimary">Market Condition Filter:</span>
-        </div>
-        <div className="flex items-center gap-1 w-full sm:w-auto overflow-x-auto pb-1 sm:pb-0">
-          {(["used", "new", "all"] as const).map((cond) => {
-            const isActive = currentCondition === cond;
-            return (
-              <button
-                key={cond}
-                onClick={() => router.push(`/analyze?query=${encodeURIComponent(query)}&condition=${cond}`)}
-                className={`px-4 py-1.5 rounded transition-colors uppercase font-bold whitespace-nowrap ${
-                  isActive
-                    ? "bg-neutral-100 text-black"
-                    : "text-textSecondary hover:text-textPrimary hover:bg-neutral-800"
-                }`}
-              >
-                {cond === "used" ? "Used / Pre-owned" : cond === "new" ? "Brand New / Unstrung" : "All Listings"}
-              </button>
-            );
-          })}
-        </div>
-      </div>
-
-      {/* RESTORED: Price Chart */}
-      {chartData.length > 0 && (
-        <section className="bg-surface border border-border rounded-lg p-4">
-          <PriceChart data={chartData} />
-        </section>
-      )}
-
-      {/* Metrics Card Grid */}
-      <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
-        <div className="border border-border rounded-lg bg-surface p-4">
-          <div className="text-[10px] text-textSecondary uppercase font-bold">Market Average</div>
-          <div className="text-2xl font-black text-emerald-400 mt-1">${avgPrice.toFixed(2)}</div>
-          <div className="text-[10px] text-textSecondary mt-1">Based on {salesVolume} sales</div>
-        </div>
-        <div className="border border-border rounded-lg bg-surface p-4">
-          <div className="text-[10px] text-textSecondary uppercase font-bold">Median Price</div>
-          <div className="text-2xl font-black text-textPrimary mt-1">${medianPrice.toFixed(2)}</div>
-        </div>
-        <div className="border border-border rounded-lg bg-surface p-4">
-          <div className="text-[10px] text-textSecondary uppercase font-bold">Peak Valuation</div>
-          <div className="text-2xl font-black text-textPrimary mt-1">${highestPrice.toFixed(2)}</div>
-        </div>
-        <div className="border border-border rounded-lg bg-surface p-4">
-          <div className="text-[10px] text-textSecondary uppercase font-bold">Floor Price</div>
-          <div className="text-2xl font-black text-textPrimary mt-1">${lowestPrice.toFixed(2)}</div>
-        </div>
-      </div>
-
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-        <div className="lg:col-span-2">
-          <FlipCalculator estimatedMarketValue={avgPrice} />
-        </div>
-
-        <div className="border border-border rounded-lg bg-surface p-5 space-y-4">
-          <div className="flex items-center gap-2 border-b border-border pb-2.5">
-            <TrendingUp className="h-4 w-4 text-emerald-400" />
-            <h2 className="text-xs font-bold uppercase tracking-wider text-textPrimary">Target Purchase Guide</h2>
+    <div className="min-h-screen bg-slate-950 text-slate-100 p-6 md:p-12">
+      <div className="max-w-6xl mx-auto space-y-8">
+        
+        <div className="flex flex-col sm:flex-row justify-between items-start sm:items-end gap-4 border-b border-slate-800 pb-6">
+          <div className="w-full max-w-md relative z-50">
+            <Link href="/checker" className="text-emerald-400 hover:text-emerald-300 text-sm font-semibold transition-colors mb-4 inline-block">
+              &larr; Back to Checker
+            </Link>
+            <div className="mt-2">
+              <AutocompleteSearch 
+                value={searchInputValue}
+                onChange={setSearchInputValue}
+                onSelectRacket={handleSelectNewRacket}
+              />
+            </div>
+            <p className="text-slate-400 text-sm mt-2">Market valuation and historical pricing data</p>
           </div>
 
-          {avgPrice === 0 ? (
-            <div className="flex items-center gap-2 text-xs text-amber-400 border border-amber-500/20 bg-amber-500/5 p-3 rounded">
-              <AlertTriangle className="h-4 w-4 shrink-0" />
-              <span>Insufficient volume to calculate margin diagnostics safely.</span>
-            </div>
-          ) : (
-            <div className="space-y-3 text-xs">
-              <div className="p-3 border border-emerald-500/20 bg-emerald-500/5 rounded">
-                <div className="font-bold text-emerald-400 uppercase">Sick Flip Zone 🔥</div>
-                <div className="text-textPrimary font-bold mt-0.5">${buyZoneSick.min} - ${buyZoneSick.max}</div>
-              </div>
-              <div className="p-3 border border-blue-500/20 bg-blue-500/5 rounded">
-                <div className="font-bold text-blue-400 uppercase">Good Flip Zone 👍</div>
-                <div className="text-textPrimary font-bold mt-0.5">${buyZoneGood.min} - ${buyZoneGood.max}</div>
-              </div>
-              <div className="p-3 border border-amber-500/20 bg-amber-500/5 rounded">
-                <div className="font-bold text-amber-400 uppercase">Tight Margin Zone ⚠️</div>
-                <div className="text-textPrimary font-bold mt-0.5">${buyZoneTight.min} - ${buyZoneTight.max}</div>
-              </div>
-            </div>
-          )}
+          <div className="flex bg-slate-900 border border-slate-800 rounded-lg p-1 space-x-1">
+            {['all', 'used', 'new'].map((cond) => (
+              <button
+                key={cond}
+                suppressHydrationWarning
+                onClick={() => {
+                  setCondition(cond);
+                  router.push(`/analyze?query=${encodeURIComponent(query)}&condition=${cond}`);
+                }}
+                className={`px-4 py-2 rounded-md text-sm font-medium capitalize transition-all ${
+                  condition === cond
+                    ? 'bg-emerald-500 text-slate-950 font-bold shadow'
+                    : 'text-slate-400 hover:text-slate-200 hover:bg-slate-800'
+                }`}
+              >
+                {cond}
+              </button>
+            ))}
+          </div>
         </div>
-      </div>
 
-      {activeListings.length > 0 && (
-        <section className="pt-6 border-t border-border mt-8">
-          <h2 className="text-sm font-bold font-mono text-textPrimary mb-4 uppercase">
-            Live Active Market Listings
-          </h2>
-          <ActiveListingsTable listings={activeListings} />
-        </section>
-      )}
+        {loading && (
+          <div className="py-20 text-center space-y-3">
+            <div className="w-8 h-8 border-4 border-emerald-500 border-t-transparent rounded-full animate-spin mx-auto" />
+            <p className="text-slate-400 text-sm">Analyzing live {condition} market data...</p>
+          </div>
+        )}
+
+        {error && !loading && (
+          <div className="p-4 bg-red-950/50 border border-red-800/50 rounded-xl text-red-300 text-sm">
+            {error}
+          </div>
+        )}
+
+        {!loading && !error && (
+          <div className="space-y-8">
+            <div className="flex items-center space-x-2">
+              <span className={`w-2.5 h-2.5 rounded-full ${isLiveFeed ? 'bg-emerald-400 animate-pulse' : 'bg-amber-400'}`} />
+              <span className="text-xs font-semibold tracking-wider text-slate-400 uppercase">
+                {isLiveFeed ? 'Live eBay Data Verified' : 'Market Estimates Active'}
+              </span>
+            </div>
+
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+              <div className="bg-slate-900 border border-slate-800 rounded-xl p-5">
+                <div className="text-xs text-slate-400 uppercase font-bold tracking-wider mb-1">Market Average</div>
+                <div className="text-3xl font-black text-emerald-400">${avgPrice.toFixed(2)}</div>
+                <div className="text-xs text-slate-400 font-medium mt-1">
+                  Based on <span className="text-emerald-400 font-bold">{salesVolume}</span> {condition.toUpperCase()} listings
+                </div>
+              </div>
+
+              <div className="bg-slate-900 border border-slate-800 rounded-xl p-5 flex flex-col justify-between">
+                <div>
+                  <div className="text-xs text-slate-400 uppercase font-bold tracking-wider mb-1">Bargain Floor</div>
+                  <div className="flex items-baseline gap-2">
+                    <span className="text-3xl font-black text-amber-400">${lowestBasePrice.toFixed(2)}</span>
+                  </div>
+                  <div className="text-xs text-slate-400 font-medium mt-1">Base Price</div>
+                </div>
+                <div className="mt-3 pt-3 border-t border-slate-800">
+                  <div className="text-xl font-bold text-emerald-400">${lowestLandedPrice.toFixed(2)}</div>
+                  <div className="text-xs text-slate-500 font-medium">Landed (With Shipping)</div>
+                </div>
+              </div>
+
+              <div className="bg-slate-900 border border-slate-800 rounded-xl p-5">
+                <div className="text-xs text-slate-400 uppercase font-bold tracking-wider mb-1">Median Price</div>
+                <div className="text-3xl font-black text-white">${medianPrice.toFixed(2)}</div>
+                <div className="text-xs text-slate-500 mt-1">Middle market baseline</div>
+              </div>
+
+              <div className="bg-slate-900 border border-slate-800 rounded-xl p-5">
+                <div className="text-xs text-slate-400 uppercase font-bold tracking-wider mb-1">Avg. Time to Sell</div>
+                <div className="text-3xl font-black text-white">~{avgDaysToSell} Days</div>
+                <div className="text-xs text-slate-500 mt-1">Estimated velocity at this price</div>
+              </div>
+            </div>
+
+            {data?.history && data.history.length > 0 && (
+              <div className="bg-slate-900 border border-slate-800 rounded-xl p-6 relative z-0">
+                <h2 className="text-lg font-bold text-white mb-6">90-Day Price Trend</h2>
+                <div className="h-72 w-full">
+                  <ResponsiveContainer width="100%" height="100%">
+                    <LineChart data={data.history} margin={{ top: 5, right: 20, bottom: 5, left: 0 }}>
+                      <CartesianGrid strokeDasharray="3 3" stroke="#1e293b" vertical={false} />
+                      <XAxis dataKey="date" stroke="#64748b" tick={{ fill: '#64748b', fontSize: 12 }} tickMargin={10} />
+                      <YAxis stroke="#64748b" tick={{ fill: '#64748b', fontSize: 12 }} tickFormatter={(value) => `$${value}`} domain={['auto', 'auto']} />
+                      <Tooltip content={<CustomTooltip />} />
+                      <Line type="monotone" dataKey="price" stroke="#34d399" strokeWidth={3} dot={{ fill: '#0f172a', stroke: '#34d399', strokeWidth: 2, r: 4 }} activeDot={{ r: 6, fill: '#34d399' }} />
+                    </LineChart>
+                  </ResponsiveContainer>
+                </div>
+              </div>
+            )}
+
+            {sortedListings.length > 0 && (
+              <div className="bg-slate-900 border border-slate-800 rounded-xl p-6 relative z-0">
+                <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 mb-6 pb-4 border-b border-slate-800">
+                  <h2 className="text-lg font-bold text-white">
+                    Active Market Listings ({sortedListings.length})
+                  </h2>
+                  <div className="flex items-center gap-2">
+                    <label htmlFor="sort-order" className="text-xs font-semibold text-slate-400 uppercase tracking-wider">
+                      Sort By:
+                    </label>
+                    <select
+                      id="sort-order"
+                      value={sortOrder}
+                      onChange={(e) => setSortOrder(e.target.value as any)}
+                      className="bg-slate-800 border border-slate-700 text-slate-200 text-sm rounded-lg p-2 focus:ring-emerald-500 focus:border-emerald-500 outline-none"
+                    >
+                      <option value="high-to-low">Price: High to Low</option>
+                      <option value="low-to-high">Price: Low to High</option>
+                      <option value="default">Default Order</option>
+                    </select>
+                  </div>
+                </div>
+
+                <div className="divide-y divide-slate-800/50">
+                  {sortedListings.map((item, index) => (
+                    <div key={index} className="py-4 flex flex-col sm:flex-row sm:justify-between sm:items-center gap-3 hover:bg-slate-800/20 transition-colors rounded-lg px-2 -mx-2">
+                      <div className="flex items-start gap-3 min-w-0 flex-1">
+                        <span className="flex-shrink-0 w-7 h-7 rounded-full bg-slate-800 border border-slate-700 text-slate-300 font-mono font-bold text-xs flex items-center justify-center mt-0.5">
+                          {index + 1}
+                        </span>
+                        <div className="min-w-0 flex-1">
+                          <p className="text-slate-200 font-medium truncate" title={item.title}>
+                            {item.title}
+                          </p>
+                          <div className="flex items-center gap-2 mt-1">
+                            {item.condition && (
+                              <span className="text-xs font-semibold px-2 py-0.5 bg-slate-800 text-slate-400 rounded-md capitalize">
+                                {item.condition}
+                              </span>
+                            )}
+                          </div>
+                        </div>
+                      </div>
+                      
+                      <div className="flex flex-row sm:flex-col items-center sm:items-end justify-between sm:justify-center gap-2 sm:gap-1 flex-shrink-0">
+                        <div className="text-right">
+                          <span className="text-emerald-400 font-bold text-lg">${item.price.toFixed(2)}</span>
+                          {item.shippingPrice !== undefined && (
+                            <span className="text-xs text-slate-400 ml-1.5 block sm:inline">
+                              {item.shippingPrice === 0 ? '+ Free Shipping' : `+ $${item.shippingPrice.toFixed(2)} shipping`}
+                            </span>
+                          )}
+                        </div>
+                        
+                        {item.url && (
+                          <a
+                            href={item.url}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="inline-flex items-center px-3 py-1 bg-blue-600 hover:bg-blue-500 text-white text-xs font-semibold rounded transition-colors"
+                          >
+                            Verify on eBay &rarr;
+                          </a>
+                        )}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+          </div>
+        )}
+      </div>
     </div>
+  );
+}
+
+export default function AnalyzePage() {
+  return (
+    <Suspense
+      fallback={
+        <div className="min-h-screen bg-slate-950 text-slate-100 p-12 text-center">
+          <div className="w-8 h-8 border-4 border-emerald-500 border-t-transparent rounded-full animate-spin mx-auto mb-4" />
+          <p className="text-slate-400 text-sm">Loading market interface...</p>
+        </div>
+      }
+    >
+      <AnalyzeContent />
+    </Suspense>
   );
 }
