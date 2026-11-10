@@ -24,6 +24,7 @@ interface MarketData {
   lowestPrice?: number;
   salesVolume?: number;
   avgDaysToSell?: number;
+  ebaySearchQuery?: string;
   history?: Array<{ date: string; price: number }>;
   listings?: Array<{
     title: string;
@@ -179,6 +180,17 @@ function AnalyzeContent() {
               <span className="text-xs font-semibold tracking-wider text-slate-400 uppercase">
                 {isLiveFeed ? 'Live eBay Data Verified' : 'Market Estimates Active'}
               </span>
+            </div>
+
+            <div className="rounded-xl border border-slate-800 bg-slate-900/60 p-4 font-mono text-xs space-y-2">
+              <p className="text-slate-400">
+                <span className="font-bold uppercase tracking-wider text-slate-300">eBay API search:</span>{' '}
+                <span className="text-emerald-400">{data?.ebaySearchQuery ?? query}</span>
+              </p>
+              <p className="text-slate-400">
+                <span className="font-bold uppercase tracking-wider text-slate-300">Typed in search:</span>{' '}
+                <span className="text-white">{query}</span>
+              </p>
             </div>
 
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">

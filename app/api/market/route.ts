@@ -1,5 +1,5 @@
 import { NextResponse } from 'next/server';
-import { fetchEbayMarketData } from '@/lib/ebay';
+import { buildEbaySearchQuery, fetchEbayMarketData } from '@/lib/ebay';
 
 export const dynamic = 'force-dynamic';
 export const revalidate = 0; 
@@ -8,30 +8,29 @@ export async function GET(request: Request) {
   try {
     const { searchParams } = new URL(request.url);
     const query = searchParams.get('query');
-    const condition = searchParams.get('condition') || 'used';
+    const condition = (searchParams.get('condition') || 'used') as 'used' | 'new' | 'all';
 
     if (!query || query.trim().length === 0) {
       return NextResponse.json({ error: 'Query parameter is required' }, { status: 400 });
     }
 
-    const marketData = await fetchEbayMarketData(query, condition as any);
-    const basePrice = marketData?.avgSoldPrice || marketData?.avgPrice || 150;
+    // Single source of truth: pass query directly to fetchEbayMarketData
+    const ebaySearchQuery = buildEbaySearchQuery(query);
+    const marketData = await fetchEbayMarketData(query, condition);
+    const safeListings = marketData.activeListings || [];
 
-    const rawListings = marketData?.activeListings || marketData?.listings || [];
-
-    const safeListings = rawListings.map((item: any) => ({
-      ...item,
-      url: item.url || item.itemWebUrl || item.itemUrl || item.viewItemURL || item.link || null
-    }));
+    const basePrice = marketData.avgActivePrice || marketData.avgSoldPrice || 150;
 
     const formattedData = {
       ...marketData,
-      avgPrice: marketData?.avgSoldPrice || marketData?.avgPrice || 0,
-      medianPrice: marketData?.medianSoldPrice || marketData?.medianPrice || 0,
-      lowestPrice: marketData?.lowestPrice || 0,
+      ebaySearchQuery,
+      avgPrice: marketData.avgActivePrice || 0,
+      medianPrice: marketData.medianSoldPrice || 0,
+      lowestPrice: marketData.lowestPrice || 0,
       listings: safeListings,
-      salesVolume: marketData?.listingCount || safeListings.length || 0,
-      avgDaysToSell: marketData?.avgDaysToSell || 7,
+      salesVolume: safeListings.length,
+      avgDaysToSell: marketData.avgDaysToSell || 7,
+      isLiveEbayData: marketData.isLive,
       history: [
         { date: '90 Days', price: basePrice * 1.15 },
         { date: '60 Days', price: basePrice * 1.05 },

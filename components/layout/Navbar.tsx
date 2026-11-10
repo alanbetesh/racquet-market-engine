@@ -3,7 +3,7 @@
 import React from "react";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
-import { Activity, Calculator, ArrowUpRight } from "lucide-react";
+import { Activity, Calculator, ArrowUpRight, CircleDollarSign } from "lucide-react";
 
 export function Navbar() {
   const pathname = usePathname();
@@ -29,6 +29,17 @@ export function Navbar() {
 
         {/* Right Navigation Controls */}
         <div className="flex items-center gap-3 ml-auto">
+          <Link
+            href="/break-even"
+            className={`hidden sm:flex items-center gap-1.5 px-3 py-1.5 rounded border font-bold text-xs transition-colors ${
+              pathname === "/break-even"
+                ? "bg-neutral-100 text-black border-neutral-100"
+                : "border-border bg-surface hover:bg-neutral-800 text-textPrimary"
+            }`}
+          >
+            <CircleDollarSign className="h-3.5 w-3.5" />
+            <span>Break-even</span>
+          </Link>
           <Link
             href="/checker"
             className={`flex items-center gap-1.5 px-3 py-1.5 rounded border font-bold text-xs transition-colors ${
