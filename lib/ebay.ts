@@ -44,12 +44,25 @@ export function buildEbaySearchQuery(userQuery: string): string {
     clean = clean.replace(reg, '');
   });
 
+  // Wilson-style version tags (v8, v9, v14) already identify the generation.
+  // A trailing year is usually redundant and makes the eBay query needlessly
+  // restrictive. Keep years for families such as VCORE, where the year is the
+  // generation identifier.
+  if (hasExplicitGenerationTag(clean)) {
+    clean = clean.replace(/\b(?:19|20)\d{2}\b/g, ' ');
+  }
+
   clean = clean.replace(/\s+/g, ' ').trim();
 
   if (!clean.toLowerCase().includes("racket") && !clean.toLowerCase().includes("racquet")) {
     return `${clean} tennis racket`;
   }
   return clean;
+}
+
+function hasExplicitGenerationTag(query: string): boolean {
+  return /\bv\s*\d+\b/i.test(query)
+    || /\b(?:auxetic(?:\s*2(?:\.0)?)?|360\+?|gen\s*\d+|\d+(?:st|nd|rd|th)\s+gen)\b/i.test(query);
 }
 
 // Collapses all letter/number spacing: "100 L" -> "100l", "v 9" -> "v9"
@@ -96,7 +109,7 @@ function isExactUniversalMatch(title: string, userQuery: string): boolean {
 
   // 5. UNIVERSAL CONFLICT-ONLY YEAR & GENERATION FILTERING
   const yearInQueryMatch = lowerQuery.match(/\b(19|20)\d{2}\b/);
-  if (yearInQueryMatch) {
+  if (yearInQueryMatch && !hasExplicitGenerationTag(lowerQuery)) {
     const queriedYear = parseInt(yearInQueryMatch[0], 10);
     const yearsInTitle = lowerTitle.match(/\b(19|20)\d{2}\b/g);
 
