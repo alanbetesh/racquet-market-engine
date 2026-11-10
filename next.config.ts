@@ -7,6 +7,9 @@ const nextConfig: NextConfig = {
   eslint: {
     ignoreDuringBuilds: true,
   },
+  images: {
+    remotePatterns: [new URL('https://i.ebayimg.com/**')],
+  },
 };
 
 export default nextConfig;

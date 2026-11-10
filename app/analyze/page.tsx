@@ -3,6 +3,7 @@
 import React, { useState, useEffect, Suspense, useMemo } from 'react';
 import { useSearchParams, useRouter } from 'next/navigation';
 import Link from 'next/link';
+import Image from 'next/image';
 import {
   LineChart,
   Line,
@@ -30,6 +31,7 @@ interface MarketData {
     title: string;
     price: number;
     shippingPrice?: number;
+    imageUrl?: string;
     date?: string;
     url?: string;
     condition?: string;
@@ -276,6 +278,21 @@ function AnalyzeContent() {
                         <span className="flex-shrink-0 w-7 h-7 rounded-full bg-slate-800 border border-slate-700 text-slate-300 font-mono font-bold text-xs flex items-center justify-center mt-0.5">
                           {index + 1}
                         </span>
+                        <div className="relative h-20 w-16 shrink-0 overflow-hidden rounded-md border border-slate-700 bg-slate-800">
+                          {item.imageUrl ? (
+                            <Image
+                              src={item.imageUrl}
+                              alt=""
+                              fill
+                              sizes="64px"
+                              className="object-cover"
+                            />
+                          ) : (
+                            <div className="flex h-full items-center justify-center px-1 text-center text-[9px] font-bold uppercase text-slate-500">
+                              No image
+                            </div>
+                          )}
+                        </div>
                         <div className="min-w-0 flex-1">
                           <p className="text-slate-200 font-medium truncate" title={item.title}>
                             {item.title}
